@@ -351,7 +351,7 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
         if (cache) {
             NSData * cacheContent;
             NSString * cacheBase64Content;
-            // EOF
+            // If length is larger than remaining size. EOF
             if ((int) length > (cache.length - (unsigned long) position)) {
                 cacheContent = [cache subdataWithRange: NSMakeRange((unsigned long) position, cache.length - (unsigned long) position)];
                 cacheBase64Content = [cacheContent base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
@@ -362,6 +362,7 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
             }
             resolve(cacheBase64Content);
         } else {
+          // Clear all cache to reduce memory;
             if ([self.assetCache count]) {
                 [self.assetCache removeAllObjects];
             }
@@ -391,7 +392,6 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
             // Allow us to fetch images from iCloud
             imageOptions.networkAccessAllowed = YES;
 
-            // PHImageRequestID requestID =
             [[PHImageManager defaultManager] requestImageDataForAsset: asset options: imageOptions resultHandler: ^ (NSData * _Nullable assetData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
                     if (assetData) {
                         NSString * base64Content;
@@ -401,19 +401,24 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
                                 base64Content = [assetData base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
                             }
                         }
-                        // If length is larger than filesize, set NSData to NSMutableDictionary and cache it.
                         else if ([self.assetCache count] == 0) {
-                            [self.assetCache setObject: assetData forKey: assetpath];
-                            NSData* content = [assetData subdataWithRange: NSMakeRange((unsigned long) position, (int) length)];
-                            base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                            NSData* content;
+                            // If length is larger than remaining size. EOF
+                            if ((int) length > (cache.length - (unsigned long) position)) {
+                              content = [cache subdataWithRange: NSMakeRange((unsigned long) position, assetData.length - (unsigned long) position)];
+                              base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                            // If length is smaller than filesize, set NSData to NSMutableDictionary and cache it.
+                            } else {
+                              [self.assetCache setObject: assetData forKey: assetpath];
+                              content = [assetData subdataWithRange: NSMakeRange((unsigned long) position, (int) length)];
+                              base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                            }
                             resolve(base64Content);
                         }
                     } else {
                         NSMutableDictionary * details = [NSMutableDictionary dictionary];
                         [details setValue: info[PHImageErrorKey] forKey: NSLocalizedDescriptionKey];
-                        NSError * error = [NSError errorWithDomain: @ "RNFS"
-                            code: 501 userInfo: details
-                        ];
+                        NSError * error = [NSError errorWithDomain: @ "RNFS" code: 501 userInfo: details];
                         [self reject: reject withError: error];
                     }
 
