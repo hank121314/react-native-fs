@@ -30,6 +30,7 @@
 @property (retain) NSMutableDictionary* downloaders;
 @property (retain) NSMutableDictionary* uuids;
 @property (retain) NSMutableDictionary* uploaders;
+@property (retain) NSMutableDictionary* assetCache;
 
 @end
 
@@ -337,58 +338,87 @@ RCT_EXPORT_METHOD(read:(NSString *)filepath
     resolve(base64Content);
 }
 
-RCT_EXPORT_METHOD(readAsset:(NSString *)assetpath
-                  length: (NSInteger *)length
-                  position: (NSInteger *)position
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject){
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSURL* url = [NSURL URLWithString:assetpath];
-        PHFetchResult *results = nil;
-        if ([url.scheme isEqualToString:@"ph"]) {
-            results = [PHAsset fetchAssetsWithLocalIdentifiers:@[[assetpath substringFromIndex: 5]] options:nil];
+RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
+                  length: (NSInteger * ) length
+                  position: (NSInteger * ) position
+                  resolver: (RCTPromiseResolveBlock) resolve
+                  rejecter: (RCTPromiseRejectBlock) reject) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^ {
+        if (!self.assetCache) {
+            self.assetCache = [[NSMutableDictionary alloc] init];
+        }
+        NSData * cache = [self.assetCache objectForKey: assetpath];
+        if (cache) {
+            NSData * cacheContent;
+            NSString * cacheBase64Content;
+            // EOF
+            if ((int) length > (cache.length - (unsigned long) position)) {
+                cacheContent = [cache subdataWithRange: NSMakeRange((unsigned long) position, cache.length - (unsigned long) position)];
+                cacheBase64Content = [cacheContent base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                [self.assetCache removeObjectForKey: assetpath];
+            } else {
+                cacheContent = [cache subdataWithRange: NSMakeRange((unsigned long) position, (int) length)];
+                cacheBase64Content = [cacheContent base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+            }
+            resolve(cacheBase64Content);
         } else {
-            results = [PHAsset fetchAssetsWithALAssetURLs:@[url] options:nil];
+            if ([self.assetCache count]) {
+                [self.assetCache removeAllObjects];
+            }
+            NSURL * url = [NSURL URLWithString: assetpath];
+            PHFetchResult * results = nil;
+            if ([url.scheme isEqualToString: @ "ph"]) {
+                results = [PHAsset fetchAssetsWithLocalIdentifiers: @[[assetpath substringFromIndex: 5]] options: nil];
+            } else {
+                results = [PHAsset fetchAssetsWithALAssetURLs: @[url] options: nil];
+            }
+            if (results.count == 0) {
+                NSString * errorText = [NSString stringWithFormat: @ "Failed to fetch PHAsset with local identifier %@ with no error message.", assetpath];
+
+                NSMutableDictionary * details = [NSMutableDictionary dictionary];
+                [details setValue: errorText forKey: NSLocalizedDescriptionKey];
+                NSError * error = [NSError errorWithDomain: @ "RNFS"
+                    code: 500 userInfo: details
+                ];
+                [self reject: reject withError: error];
+                return;
+            }
+
+            PHImageRequestOptions * imageOptions = [PHImageRequestOptions new];
+
+            PHAsset * const _Nonnull asset = [results firstObject];
+
+            // Allow us to fetch images from iCloud
+            imageOptions.networkAccessAllowed = YES;
+
+            // PHImageRequestID requestID =
+            [[PHImageManager defaultManager] requestImageDataForAsset: asset options: imageOptions resultHandler: ^ (NSData * _Nullable assetData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
+                    if (assetData) {
+                        NSString * base64Content;
+                        if ((int) length >= assetData.length) {
+                            // Length is larger than filesize
+                            if ((int) length >= assetData.length) {
+                                base64Content = [assetData base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                            }
+                        }
+                        // If length is larger than filesize, set NSData to NSMutableDictionary and cache it.
+                        else if ([self.assetCache count] == 0) {
+                            [self.assetCache setObject: assetData forKey: assetpath];
+                            NSData* content = [assetData subdataWithRange: NSMakeRange((unsigned long) position, (int) length)];
+                            base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                            resolve(base64Content);
+                        }
+                    } else {
+                        NSMutableDictionary * details = [NSMutableDictionary dictionary];
+                        [details setValue: info[PHImageErrorKey] forKey: NSLocalizedDescriptionKey];
+                        NSError * error = [NSError errorWithDomain: @ "RNFS"
+                            code: 501 userInfo: details
+                        ];
+                        [self reject: reject withError: error];
+                    }
+
+            }];
         }
-        if (results.count == 0) {
-            NSString *errorText = [NSString stringWithFormat:@"Failed to fetch PHAsset with local identifier %@ with no error message.", assetpath];
-
-            NSMutableDictionary* details = [NSMutableDictionary dictionary];
-            [details setValue:errorText forKey:NSLocalizedDescriptionKey];
-            NSError *error = [NSError errorWithDomain:@"RNFS" code:500 userInfo:details];
-            [self reject: reject withError:error];
-            return;
-        }
-
-        PHImageRequestOptions *imageOptions = [PHImageRequestOptions new];
-
-        PHAsset *const _Nonnull asset = [results firstObject];
-    
-        // Allow us to fetch images from iCloud
-        imageOptions.networkAccessAllowed = YES;
-
-        // PHImageRequestID requestID =
-        [[PHImageManager defaultManager] requestImageDataForAsset:asset options:imageOptions resultHandler:^(NSData * _Nullable assetData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
-            if (assetData) {
-                NSData *content;
-                NSString *base64Content;
-                if((int)length >= assetData.length){
-                    base64Content = [assetData base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
-                } else if((int)length > (assetData.length - (unsigned long)position)){
-                    content = [assetData subdataWithRange:NSMakeRange((unsigned long)position, assetData.length - (unsigned long)position)];
-                    base64Content = [content base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
-                } else {
-                    content = [assetData subdataWithRange:NSMakeRange((unsigned long)position, (int)length)];
-                    base64Content = [content base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
-                }
-                    resolve(base64Content);
-                } else {
-                    NSMutableDictionary* details = [NSMutableDictionary dictionary];
-                    [details setValue:info[PHImageErrorKey] forKey:NSLocalizedDescriptionKey];
-                    NSError *error = [NSError errorWithDomain:@"RNFS" code:501 userInfo:details];
-                    [self reject: reject withError:error];
-                }
-        }];
     });
 }
 
