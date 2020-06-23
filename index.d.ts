@@ -186,7 +186,12 @@ export function read(
 	position?: number,
 	encodingOrOptions?: any
 ): Promise<string>
-
+export function readAsset(
+	filepath: string,
+	length?: number,
+	position?: number,
+	encodingOrOptions?: any
+): Promise<string>
 /**
  * Android only
  */

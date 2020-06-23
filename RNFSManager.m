@@ -337,6 +337,61 @@ RCT_EXPORT_METHOD(read:(NSString *)filepath
     resolve(base64Content);
 }
 
+RCT_EXPORT_METHOD(readAsset:(NSString *)assetpath
+                  length: (NSInteger *)length
+                  position: (NSInteger *)position
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject){
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSURL* url = [NSURL URLWithString:assetpath];
+        PHFetchResult *results = nil;
+        if ([url.scheme isEqualToString:@"ph"]) {
+            results = [PHAsset fetchAssetsWithLocalIdentifiers:@[[assetpath substringFromIndex: 5]] options:nil];
+        } else {
+            results = [PHAsset fetchAssetsWithALAssetURLs:@[url] options:nil];
+        }
+        if (results.count == 0) {
+            NSString *errorText = [NSString stringWithFormat:@"Failed to fetch PHAsset with local identifier %@ with no error message.", assetpath];
+
+            NSMutableDictionary* details = [NSMutableDictionary dictionary];
+            [details setValue:errorText forKey:NSLocalizedDescriptionKey];
+            NSError *error = [NSError errorWithDomain:@"RNFS" code:500 userInfo:details];
+            [self reject: reject withError:error];
+            return;
+        }
+
+        PHImageRequestOptions *imageOptions = [PHImageRequestOptions new];
+
+        PHAsset *const _Nonnull asset = [results firstObject];
+    
+        // Allow us to fetch images from iCloud
+        imageOptions.networkAccessAllowed = YES;
+
+        // PHImageRequestID requestID =
+        [[PHImageManager defaultManager] requestImageDataForAsset:asset options:imageOptions resultHandler:^(NSData * _Nullable assetData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
+            if (assetData) {
+                NSData *content;
+                NSString *base64Content;
+                if((int)length >= assetData.length){
+                    base64Content = [assetData base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
+                } else if((int)length > (assetData.length - (unsigned long)position)){
+                    content = [assetData subdataWithRange:NSMakeRange((unsigned long)position, assetData.length - (unsigned long)position)];
+                    base64Content = [content base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
+                } else {
+                    content = [assetData subdataWithRange:NSMakeRange((unsigned long)position, (int)length)];
+                    base64Content = [content base64EncodedStringWithOptions:NSDataBase64EncodingEndLineWithLineFeed];
+                }
+                    resolve(base64Content);
+                } else {
+                    NSMutableDictionary* details = [NSMutableDictionary dictionary];
+                    [details setValue:info[PHImageErrorKey] forKey:NSLocalizedDescriptionKey];
+                    NSError *error = [NSError errorWithDomain:@"RNFS" code:501 userInfo:details];
+                    [self reject: reject withError:error];
+                }
+        }];
+    });
+}
+
 RCT_EXPORT_METHOD(hash:(NSString *)filepath
                   algorithm:(NSString *)algorithm
                   resolver:(RCTPromiseResolveBlock)resolve
