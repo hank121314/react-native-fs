@@ -404,8 +404,8 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
                         else if ([self.assetCache count] == 0) {
                             NSData* content;
                             // If length is larger than remaining size. EOF
-                            if ((int) length > (cache.length - (unsigned long) position)) {
-                              content = [cache subdataWithRange: NSMakeRange((unsigned long) position, assetData.length - (unsigned long) position)];
+                            if ((int) length > (assetData.length - (unsigned long) position)) {
+                              content = [assetData subdataWithRange: NSMakeRange((unsigned long) position, assetData.length - (unsigned long) position)];
                               base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
                             // If length is smaller than filesize, set NSData to NSMutableDictionary and cache it.
                             } else {
@@ -413,8 +413,8 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
                               content = [assetData subdataWithRange: NSMakeRange((unsigned long) position, (int) length)];
                               base64Content = [content base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
                             }
-                            resolve(base64Content);
                         }
+                        resolve(base64Content);
                     } else {
                         NSMutableDictionary * details = [NSMutableDictionary dictionary];
                         [details setValue: info[PHImageErrorKey] forKey: NSLocalizedDescriptionKey];
