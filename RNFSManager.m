@@ -351,8 +351,13 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
         if (cache) {
             NSData * cacheContent;
             NSString * cacheBase64Content;
+            // Read whole file which already in cache.
+            if ((int) length >= cache.length) {
+                cacheBase64Content = [cache base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
+                [self.assetCache removeObjectForKey: assetpath];
+            }
             // If length is larger than remaining size. EOF
-            if ((int) length > (cache.length - (unsigned long) position)) {
+            else if ((int) length > (cache.length - (unsigned long) position)) {
                 cacheContent = [cache subdataWithRange: NSMakeRange((unsigned long) position, cache.length - (unsigned long) position)];
                 cacheBase64Content = [cacheContent base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
                 [self.assetCache removeObjectForKey: assetpath];
@@ -395,11 +400,9 @@ RCT_EXPORT_METHOD(readAsset: (NSString * ) assetpath
             [[PHImageManager defaultManager] requestImageDataForAsset: asset options: imageOptions resultHandler: ^ (NSData * _Nullable assetData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
                     if (assetData) {
                         NSString * base64Content;
+                        // Length is larger than filesize
                         if ((int) length >= assetData.length) {
-                            // Length is larger than filesize
-                            if ((int) length >= assetData.length) {
-                                base64Content = [assetData base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
-                            }
+                            base64Content = [assetData base64EncodedStringWithOptions: NSDataBase64EncodingEndLineWithLineFeed];
                         }
                         else if ([self.assetCache count] == 0) {
                             NSData* content;
